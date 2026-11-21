@@ -69,7 +69,7 @@ the board, sending the commands as it goes. `tools/board.py` is the small serial
 In your own PlatformIO project:
 
 ```ini
-lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.1.0
+lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.1.1
 ```
 
 - `agarce.h`: decode and encode advertisements (`decodeAdv`, `encodeAdv`, `Packet`).

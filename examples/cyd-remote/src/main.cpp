@@ -187,7 +187,9 @@ void refreshScreen() {
 
 void setup() {
   Serial.begin(921600);
-  Serial.printf("BOOT smartlight remote \"%s\"\n", REMOTE_TITLE);
+  // A newline first: the ROM bootloader's banner (115200 baud, junk at this speed) ends without one, and the boot line
+  // would be glued onto it, so line-based readers miss it.
+  Serial.printf("\nBOOT smartlight remote \"%s\"\n", REMOTE_TITLE);
   printHeap("boot");
   ui::begin();
   fanlink::begin();
