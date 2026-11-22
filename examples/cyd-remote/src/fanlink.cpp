@@ -8,6 +8,7 @@
 #include "describe.h"
 #include "fancmd.h"
 #include "fanstate.h"
+#include "follow.h"
 #include "radio.h"
 #include "store.h"
 
@@ -28,9 +29,13 @@ Key key;
 bool learning = false;
 uint32_t appCommands = 0;
 char last[64] = "nothing yet";
-bool heardAny = false;  // the last distinct app command heard (any ID), to drop its repeats
-uint16_t heardSeed = 0;
-uint8_t heardTx = 0;
+// Every distinct command heard (any ID), so its repeats and the receiver's relays are handled once, even when other
+// commands are heard in between: a late copy of an older command must never be taken as a new one.
+follow::RecentCommands heard;
+// The commands this board sent: a packet with our key that matches one is ours coming back (the receiver's relay).
+// Anything else with our key is another controller's, even with the same sequence number (two controllers sending at
+// once both use the next number).
+follow::RecentCommands sent;
 uint32_t lastSendMs = 0;
 bool sentOnce = false;
 bool heardKeySinceBoot = false;  // an app command with our key's ID heard since boot (needed for a learned key)
@@ -60,9 +65,10 @@ void observeAndSave(const agarce::Packet& p) {
 }
 
 uint32_t onAirUntilMs = 0;  // when the command on the air ends (for the screen's "Sending…")
+uint32_t followed = 0;      // commands with our key that another controller sent, and this board followed
 
-// The identity and the next counters (ha-ble-adv's rule: when tx wraps to 0, the restart count goes up).
-agarce::Packet nextPacket() {
+// The key's identity and its counters as they stand (the last sequence number used or heard).
+agarce::Packet keyPacket() {
   agarce::Packet p;
   p.prefix = key.prefix;
   p.id = key.id;
@@ -71,6 +77,12 @@ agarce::Packet nextPacket() {
   p.rem1 = key.rem1;
   p.tx = key.tx;
   p.restart = key.restart;
+  return p;
+}
+
+// The identity and the next counters (ha-ble-adv's rule: when tx wraps to 0, the restart count goes up).
+agarce::Packet nextPacket() {
+  agarce::Packet p = keyPacket();
   agarce::nextSequence(p);  // the whole 28-bit counter, so it never goes backwards
   p.seed = (uint16_t)(1 + esp_random() % 0xFFF5);
   return p;
@@ -91,6 +103,7 @@ void keepCounters(const agarce::Packet& p) {
 bool advertise(const agarce::Packet& p, uint32_t ms) {
   if (!putOnAir(p, ms)) return false;
   keepCounters(p);
+  sent.add(p);
   onAirUntilMs = millis() + ms;
   return true;
 }
@@ -117,6 +130,7 @@ bool pairStep(uint32_t now) {
       fancmd::buildPair(pairPacket);
       if (!putOnAir(pairPacket, kPairSliceMs + 50)) return false;
       keepCounters(pairPacket);
+      sent.add(pairPacket);
       pairCycles++;
       pairCycleStartMs = now;
       pairPhase = PairPhase::V4;
@@ -180,12 +194,14 @@ void onAdv(const uint8_t* adv, size_t len, uint32_t ms, int rssi) {
                   diag, raw);
     return;
   }
-  // The app repeats each command for ~400 ms; one (seed, tx) is one command
-  if (heardAny && p.seed == heardSeed && p.tx == heardTx) return;
-  heardAny = true;
-  heardSeed = p.seed;
-  heardTx = p.tx;
-  appCommands++;
+  // A sender repeats each command for its whole duration (3 s), and the receiver relays it: one (sequence, seed) is
+  // one command, handled once. While LEARNing, a repeat still teaches (LEARN typed while a command is on the air).
+  bool repeat = heard.contains(p);
+  if (repeat && !learning) return;
+  if (!repeat) {
+    heard.add(p);
+    appCommands++;
+  }
   char what[64], idText[12];
   describe::packet(p, what, sizeof(what));
   maskId(p.id, idText, sizeof(idText));
@@ -194,21 +210,49 @@ void onAdv(const uint8_t* adv, size_t len, uint32_t ms, int rssi) {
                 rssi, p.prefix & 0x0F, p.tx, p.restart, p.rem0, p.rem1, p.seed, idText, p.index,
                 ours ? " (key)" : "", what);
   snprintf(last, sizeof(last), "heard: %s", what);
-  if (learning && p.cmd != 0x00) {
-    key = Key{true, false, p.id, p.index, p.prefix, p.rem0, p.rem1, p.tx, p.restart};
+  if (learning && p.cmd != 0x00 && !sent.contains(p)) {  // never from our own command coming back
     learning = false;
-    ours = true;
-    Serial.printf("LEARNED id=%s index=%u (stored in NVS)\n", idText, p.index);
+    if (ours) {
+      // The key we already hold: keep our counter and state (the packet may be an older one still on the air), and
+      // let the follow rule below handle it as usual
+      Serial.printf("LEARNED id=%s index=%u: already this board's key, nothing changed\n", idText, p.index);
+    } else {
+      key = Key{true, false, p.id, p.index, p.prefix, p.rem0, p.rem1, p.tx, p.restart};
+      heardKeySinceBoot = true;
+      save();
+      observeAndSave(p);
+      Serial.printf("LEARNED id=%s index=%u (stored in NVS)\n", idText, p.index);
+      return;
+    }
   }
-  if (ours) {
-    key.tx = p.tx;
-    key.restart = p.restart;
-    heardKeySinceBoot = true;
-    save();
-    // Only the app's own commands (a learned key) change the state here. The receiver's relays of the board's own
-    // commands also match the key, but the board already observed those when it sent them.
-    if (!key.own) observeAndSave(p);
+  if (repeat || !ours) return;
+  heardKeySinceBoot = true;
+  // A command with our key is either ours coming back (the receiver's relay: one of our recent sends, same sequence
+  // number and seed) or another controller's: a second board sharing the key, or the app.
+  if (sent.contains(p)) return;
+  // Another controller's command, heard for the first time: follow::decide says what it changes (newer: state and
+  // counter; the same number: both commands, the higher seed's last; older: nothing, so the state never rolls back).
+  const agarce::Packet* ourSame = sent.withSequence(agarce::sequence(p));
+  follow::Action action = follow::decide(p, keyPacket(), ourSame);
+  if (action == follow::Action::Ignore) {
+    Serial.printf("IGNORED tx=%u restart=%u (older than ours) : %s\n", p.tx, p.restart, what);
+    return;
   }
+  if (action == follow::Action::StateAndCounter) keepCounters(p);
+  fanstate::observe(p, fanState);
+  if (action == follow::Action::StateThenOurs) fanstate::observe(*ourSame, fanState);  // ours wins where they overlap
+  store::saveState(fanState);
+  followed++;
+  if (action == follow::Action::StateAndCounter && pairUntilMs == 0 && (int32_t)(onAirUntilMs - millis()) > 0) {
+    radio::stop();
+    onAirUntilMs = millis();  // not 0: after ~24.8 days, 0 would read as in the future (as stop() does it)
+    Serial.println("SUPERSEDED: a newer command with our key was heard; ours is off the air");
+  }
+  Serial.printf("FOLLOWED tx=%u restart=%u%s : %s\n", p.tx, p.restart,
+                action == follow::Action::StateAndCounter ? ""
+                : action == follow::Action::State         ? " (same number: theirs last)"
+                                                           : " (same number: ours last)",
+                what);
 }
 
 void tick() {
@@ -486,7 +530,7 @@ void printState() {
 }
 
 Status status() {
-  Status s{key.valid, learning, 0, appCommands, {}, false};
+  Status s{key.valid, learning, 0, appCommands, {}, false, followed};
   s.onAir = (int32_t)(onAirUntilMs - millis()) > 0 && radio::onAir();
   if (pairUntilMs != 0) {
     int32_t left = (int32_t)(pairUntilMs - millis());

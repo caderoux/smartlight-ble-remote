@@ -53,8 +53,14 @@ bool encodeMfg(const Packet& p, uint8_t out[kMfgLen]);
 // A full advertisement payload as the app sends it: flags (02 01 1A), then the manufacturer data. Returns its length.
 size_t encodeAdv(const Packet& p, uint8_t* out, size_t cap);
 
-// Step the packet's sequence number: tx, restart, rem0 and rem1's low nibble are one 28-bit little-endian counter;
-// rem1's high nibble (the app's "order") is kept. The receiver expects it to keep increasing.
+// The packet's sequence number: tx, restart, rem0 and rem1's low nibble are one 28-bit little-endian counter (rem1's
+// high nibble is the app's "order", not part of it). The receiver expects it to keep increasing.
+uint32_t sequence(const Packet& p);
+// Step the packet's sequence number by one, keeping rem1's high nibble.
 void nextSequence(Packet& p);
+// Whether a's sequence number comes after b's: true when it's 1 to 0x07FFFFFF ahead (under half the 28-bit range), so
+// it holds across the wrap from 0x0FFFFFFF to 0 and is never true both ways. Equal is not newer. Two controllers
+// sharing an ID use it to follow each other.
+bool newer(const Packet& a, const Packet& b);
 
 }  // namespace agarce

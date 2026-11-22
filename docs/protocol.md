@@ -39,6 +39,20 @@ from 255 to 0, "restart" (its next byte) goes up by one, and the receiver keeps 
 `agarce::nextSequence` carries through all 28 bits and keeps the order nibble, and the example stores the counter in
 NVS, so it never goes backwards, even across a reboot.
 
+**Two controllers can share one ID** (a second board that `LEARN`ed it from the first, **verified** on one fan-light):
+both are obeyed. They share one counter too, so each must follow the other's commands (`follow.h`):
+- **The receiver's relays of the board's own commands** have the same sequence number AND seed as one of its recent
+  sends, and are ignored. Every command is handled once, however many copies arrive.
+- **Another controller's command** (same ID, a sequence/seed pair the board didn't send):
+  - **newer** than the board's counter (`agarce::newer`, wrap-safe) → its state and counter are taken, and the
+    board's own command still on the air stops, so the newest wins;
+  - **the same number** (both sent at once) → both commands are applied, the higher seed's last, so both boards end
+    with the same state (what the fan did with two commands at one number is untested);
+  - **older** → ignored: a late copy, a relay of a command the board missed, or a stale controller. The state never
+    rolls back. The cost: the phone app, which reuses numbers it doesn't know the board used, isn't followed once
+    the board has sent with the ID.
+- Whether the receiver rejects an old number is untested.
+
 ## Commands (5 bytes)
 **Single device** (type 8): `[attr | device & 15, p0, p1, p2, group & 15 | (device << 2) & 0xC0]`. The device ID is
 split between the first and last bytes.

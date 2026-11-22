@@ -43,11 +43,14 @@ After that it boots straight to the main screen. The key, the last state and the
 survive power cuts and reflashing.
 
 ## Using it
-- **Tap LIGHT or FAN** to switch it. The top line shows `Sending: …` for the 3 seconds a command is on the air, then
-  `Sent: …`.
+- **Tap LIGHT or FAN** to switch it. The top line shows `Sending: …` for the 3 seconds a command is on the air (less if
+  another controller sends a newer one: the newest wins), then `Sent: …`.
 - **Settings ›** opens the settings screen. **Back** returns to the main screen, and so does 30 seconds without a tap.
-- **The fan-light never reports its state.** The screen shows what the remote last sent. If the phone app or the wall
-  switch changes something, the screen won't know until you next tap.
+- **The fan-light never reports its state.** The screen shows what the remote last sent, or last heard from another
+  controller that uses the same ID, such as a second board that learned this one's: those commands update the state,
+  and the buttons with it. The wall switch, and anything the board doesn't hear, aren't seen until the next command.
+  The phone app is followed only until the board sends: the app reuses sequence numbers it doesn't know the board
+  used, and a board never follows an older number (`docs/protocol.md`).
 
 ## Serial console (921600 baud)
 For pairing, diagnostics and tests. One command per line:
@@ -69,14 +72,18 @@ the board, sending the commands as it goes. `tools/board.py` is the small serial
 In your own PlatformIO project:
 
 ```ini
-lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.1.1
+lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.1.2
 ```
 
-- `agarce.h`: decode and encode advertisements (`decodeAdv`, `encodeAdv`, `Packet`).
+- `agarce.h`: decode and encode advertisements (`decodeAdv`, `encodeAdv`, `Packet`); the sequence number
+  (`sequence`, `nextSequence`, and `newer`, for controllers that share an ID).
 - `fancmd.h`: build a command from an action and the current state (`build`, `buildPair`, `parse`).
 - `fanstate.h`: track what was sent (`observe`).
+- `follow.h`: follow other controllers that share the ID: tell the receiver's relays of our own commands from theirs
+  (`RecentCommands`), and decide what each changes (`decide`).
 - `describe.h`: a packet in words, for logs.
-- `remote.h`, `pt_touch.h`: the touchscreen remote's layout model and the touch maths.
+- `remote.h`, `pt_touch.h`: the touchscreen remote's layout model (and `change`: the words for a command another
+  controller sent), and the touch maths.
 
 Tests run on the PC: `pio test -e native` from the repo root. They need a C++17 compiler on the PATH.
 

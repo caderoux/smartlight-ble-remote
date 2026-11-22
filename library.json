@@ -1,6 +1,6 @@
 {
   "name": "SmartLightBLE",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Control Smart Light (Argrace, 'agarce') BLE-advertising fan-lights: the packet codec, commands and state, plus a touchscreen remote's model. Pure C++, tested on the PC.",
   "keywords": "ble, advertising, ceiling fan, fan light, smart light, argrace, agarce, esp32, cheap yellow display",
   "repository": { "type": "git", "url": "https://github.com/caderoux/smartlight-ble-remote.git" },

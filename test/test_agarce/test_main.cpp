@@ -503,6 +503,45 @@ void test_next_sequence_carries() {
   TEST_ASSERT_EQUAL_HEX8(0x11, p.rem1);
 }
 
+agarce::Packet atSequence(uint32_t n, uint8_t order = 0x10) {
+  agarce::Packet p;
+  p.tx = (uint8_t)n;
+  p.restart = (uint8_t)(n >> 8);
+  p.rem0 = (uint8_t)(n >> 16);
+  p.rem1 = (uint8_t)(order | ((n >> 24) & 0x0F));
+  return p;
+}
+
+void test_sequence_is_the_28_bit_counter() {
+  TEST_ASSERT_EQUAL_HEX32(0x0, agarce::sequence(atSequence(0)));
+  TEST_ASSERT_EQUAL_HEX32(0x0ABCDEF1, agarce::sequence(atSequence(0x0ABCDEF1)));
+  TEST_ASSERT_EQUAL_HEX32(0x0ABCDEF1, agarce::sequence(atSequence(0x0ABCDEF1, 0xF0)));  // the order nibble isn't in it
+  agarce::Packet p = atSequence(0x0FFFFFFF);
+  agarce::nextSequence(p);  // the counter's own wrap
+  TEST_ASSERT_EQUAL_HEX32(0x0, agarce::sequence(p));
+  TEST_ASSERT_EQUAL_HEX8(0x10, p.rem1);
+  p = atSequence(0x26 | (38 << 8));  // tx 38, restart 38 (as on the fan): the step carries through every byte
+  agarce::nextSequence(p);
+  TEST_ASSERT_EQUAL_HEX32(0x2627, agarce::sequence(p));
+}
+
+void test_newer_follows_the_counter_across_the_wrap() {
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(56), atSequence(55)));
+  TEST_ASSERT_FALSE(agarce::newer(atSequence(55), atSequence(56)));  // older: a late relay
+  TEST_ASSERT_FALSE(agarce::newer(atSequence(56), atSequence(56)));  // equal: our own command's relay
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0x100), atSequence(0xFF)));          // tx wraps into restart
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0x10000), atSequence(0xFFFF)));      // restart wraps into rem0
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0x1000000), atSequence(0xFFFFFF)));  // rem0 into rem1's low nibble
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0), atSequence(0x0FFFFFFF)));        // the 28-bit wrap
+  TEST_ASSERT_FALSE(agarce::newer(atSequence(0x0FFFFFFF), atSequence(0)));
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(40, 0x10), atSequence(39, 0xF0)));  // the order nibble is ignored
+  // The halfway point: never newer both ways
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0x07FFFFFF), atSequence(0)));
+  TEST_ASSERT_FALSE(agarce::newer(atSequence(0x08000000), atSequence(0)));
+  TEST_ASSERT_FALSE(agarce::newer(atSequence(0), atSequence(0x08000000)));
+  TEST_ASSERT_TRUE(agarce::newer(atSequence(0), atSequence(0x08000001)));
+}
+
 }  // namespace
 
 void setUp() {}
@@ -532,5 +571,7 @@ int main() {
   RUN_TEST(test_state_from_group_and_all);
   RUN_TEST(test_describe);
   RUN_TEST(test_next_sequence_carries);
+  RUN_TEST(test_sequence_is_the_28_bit_counter);
+  RUN_TEST(test_newer_follows_the_counter_across_the_wrap);
   return UNITY_END();
 }

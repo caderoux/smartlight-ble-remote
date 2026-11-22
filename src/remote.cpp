@@ -174,6 +174,30 @@ void label(fancmd::Action action, int value, char* out, int cap) {
   snprintf(out, cap, "?");
 }
 
+bool change(const fanstate::State& before, const fanstate::State& after, fancmd::Action& action, int& value) {
+  using fancmd::Action;
+  value = 0;
+  if (before.lightOn && before.fanOn && !after.lightOn && !after.fanOn) {
+    action = Action::AllOff;
+  } else if (before.lightOn != after.lightOn) {
+    action = after.lightOn ? Action::LightOn : Action::LightOff;
+  } else if (before.fanOn != after.fanOn || (after.fanOn && before.speed != after.speed)) {
+    action = after.fanOn ? Action::FanSpeed : Action::FanOff;
+    value = after.fanOn ? after.speed : 0;
+  } else if (before.reverse != after.reverse) {
+    action = after.reverse ? Action::FanReverse : Action::FanForward;
+  } else if (before.br != after.br) {
+    action = Action::Brightness;
+    value = after.br;
+  } else if (before.ct != after.ct) {
+    action = Action::ColourTemp;
+    value = after.ct;
+  } else {
+    return false;
+  }
+  return true;
+}
+
 bool speedMarked(Control c, const fanstate::State& s) {
   int sp = speedOf(c);
   return sp != 0 && s.speed == sp;

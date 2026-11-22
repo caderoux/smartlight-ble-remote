@@ -203,6 +203,56 @@ void test_labels() {
   TEST_ASSERT_EQUAL_STRING("Light off", text);
 }
 
+// change() then label(): the words a remote shows for a command another controller sent
+const char* heard(const fanstate::State& before, const fanstate::State& after) {
+  static char text[32];
+  fancmd::Action action;
+  int value;
+  if (!remote::change(before, after, action, value)) return "(nothing)";
+  remote::label(action, value, text, sizeof(text));
+  return text;
+}
+
+void test_change_names_what_another_controller_did() {
+  fanstate::State s;  // light on, br 100, ct 100, fan off at speed 1
+  fanstate::State t = s;
+  TEST_ASSERT_EQUAL_STRING("(nothing)", heard(s, t));
+  t.lightOn = false;
+  TEST_ASSERT_EQUAL_STRING("Light off", heard(s, t));
+  TEST_ASSERT_EQUAL_STRING("Light on", heard(t, s));
+  t = s;
+  t.fanOn = true;
+  t.speed = 3;
+  TEST_ASSERT_EQUAL_STRING("Fan 3", heard(s, t));  // on at a speed
+  TEST_ASSERT_EQUAL_STRING("Fan off", heard(t, s));
+  fanstate::State u = t;
+  u.speed = 5;
+  TEST_ASSERT_EQUAL_STRING("Fan 5", heard(t, u));  // a new speed while running
+  u = s;
+  u.speed = 4;
+  TEST_ASSERT_EQUAL_STRING("(nothing)", heard(s, u));  // the speed set while off isn't shown as a change
+  u = t;
+  u.reverse = true;
+  TEST_ASSERT_EQUAL_STRING("Reverse", heard(t, u));
+  TEST_ASSERT_EQUAL_STRING("Forward", heard(u, t));
+  u = s;
+  u.br = 40;
+  TEST_ASSERT_EQUAL_STRING("Brightness 40%", heard(s, u));
+  u = s;
+  u.ct = 20;
+  TEST_ASSERT_EQUAL_STRING("Colour 20%", heard(s, u));
+  u = s;  // a light command carries brightness and colour too: the switch is what's named
+  u.lightOn = false;
+  u.br = 40;
+  u.ct = 20;
+  TEST_ASSERT_EQUAL_STRING("Light off", heard(s, u));
+  fanstate::State both = t;  // light and fan on, then both off at once
+  u = both;
+  u.lightOn = false;
+  u.fanOn = false;
+  TEST_ASSERT_EQUAL_STRING("All off", heard(both, u));
+}
+
 }  // namespace
 
 void setUp() {}
@@ -218,5 +268,6 @@ int main() {
   RUN_TEST(test_light_settings_while_off);
   RUN_TEST(test_fan_settings);
   RUN_TEST(test_labels);
+  RUN_TEST(test_change_names_what_another_controller_did);
   return UNITY_END();
 }

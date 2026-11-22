@@ -1,7 +1,11 @@
 // The board's link to the fan: decodes Smart Light packets as the scanner hears them, keeps the key (an ID and
 // index, plus its counters, in NVS; the ID is never printed in full) and sends commands with it.
 // The key is either the board's own (NEWKEY, then PAIR while the fan is in its pairing window after power-up), or
-// learned from the app (LEARN), which needs the app to send something.
+// learned (LEARN) from another controller's command: the app, or another board that shares the key.
+// Commands another controller sends with the key are followed (the library's follow::decide): a newer sequence
+// number moves the counter and the state; with the same number (both sent at once) both commands apply, the higher
+// seed's last; an older one changes nothing. The receiver's relays of our own commands and late copies of any command
+// change nothing.
 #pragma once
 #include <stddef.h>
 #include <stdint.h>
@@ -18,6 +22,7 @@ struct Status {
   uint32_t appCommands;    // distinct Smart Light commands decoded since boot
   char last[64];           // the last command heard or sent, described
   bool onAir;              // a command is being broadcast now (the screen shows "Sending…")
+  uint32_t followed;       // commands another controller sent with our key, which this board followed (it counts up)
 };
 
 void begin();                                                       // load the key and the fan state from NVS

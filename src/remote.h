@@ -77,6 +77,11 @@ Tap tap(Control c, const fanstate::State& s);
 // The status line's words for a command: "Light on", "Brightness 70%", "Colour 30%", "Fan 3", "Fan off", "Reverse".
 void label(fancmd::Action action, int value, char* out, int cap);
 
+// The command that took the state from `before` to `after` (one heard from another controller), for label(): the
+// light or fan switching first, then the fan's speed and direction, then brightness and colour. False if nothing a
+// remote shows changed.
+bool change(const fanstate::State& before, const fanstate::State& after, fancmd::Action& action, int& value);
+
 // For drawing a speed button: `lit` = the fan is running at it; `marked` = it's the speed set (shown even while the
 // fan is off, as the speed the next "on" uses).
 bool speedLit(Control c, const fanstate::State& s);

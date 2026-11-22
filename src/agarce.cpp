@@ -163,13 +163,25 @@ size_t encodeAdv(const Packet& p, uint8_t* out, size_t cap) {
   return need;
 }
 
+namespace {
+constexpr uint32_t kSequenceMask = 0x0FFFFFFF;  // 28 bits
+}  // namespace
+
+uint32_t sequence(const Packet& p) {
+  return (uint32_t)p.tx | ((uint32_t)p.restart << 8) | ((uint32_t)p.rem0 << 16) | ((uint32_t)(p.rem1 & 0x0F) << 24);
+}
+
 void nextSequence(Packet& p) {
-  uint32_t n = (uint32_t)p.tx | ((uint32_t)p.restart << 8) | ((uint32_t)p.rem0 << 16) | ((uint32_t)(p.rem1 & 0x0F) << 24);
-  n = (n + 1) & 0x0FFFFFFF;
+  uint32_t n = (sequence(p) + 1) & kSequenceMask;
   p.tx = (uint8_t)n;
   p.restart = (uint8_t)(n >> 8);
   p.rem0 = (uint8_t)(n >> 16);
   p.rem1 = (uint8_t)((p.rem1 & 0xF0) | ((n >> 24) & 0x0F));
+}
+
+bool newer(const Packet& a, const Packet& b) {
+  uint32_t ahead = (sequence(a) - sequence(b)) & kSequenceMask;
+  return ahead != 0 && ahead <= (kSequenceMask >> 1);  // under half the range, so it's never true both ways
 }
 
 }  // namespace agarce
