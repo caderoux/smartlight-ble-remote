@@ -38,7 +38,6 @@ follow::RecentCommands heard;
 follow::RecentCommands sent;
 uint32_t lastSendMs = 0;
 bool sentOnce = false;
-bool heardKeySinceBoot = false;  // an app command with our key's ID heard since boot (needed for a learned key)
 uint32_t pairUntilMs = 0;  // non-zero while the pair command is on the air
 fanstate::State fanState;    // the fan and light state, as last heard from the app or last sent
 
@@ -80,10 +79,20 @@ agarce::Packet keyPacket() {
   return p;
 }
 
+// After a boot the saved counter may be behind: another board sharing the key may have sent commands this one didn't
+// hear while it was off. Its sends would then carry numbers the other board takes as old and ignores (the boards
+// never roll back), and the two would disagree. So until the counter is known to be current (this board has sent, or
+// taken a newer number from the other board, since boot), the next send skips this far ahead. The fan obeys old
+// numbers anyway (measured): this is only for keeping the boards in step. 1024 per boot leaves ~262,000 boots before
+// the 28-bit counter wraps, and newer() is wrap-safe.
+constexpr uint32_t kBootSkip = 1024;
+bool counterCurrent = false;
+
 // The identity and the next counters (ha-ble-adv's rule: when tx wraps to 0, the restart count goes up).
 agarce::Packet nextPacket() {
   agarce::Packet p = keyPacket();
-  agarce::nextSequence(p);  // the whole 28-bit counter, so it never goes backwards
+  uint32_t steps = counterCurrent ? 1 : kBootSkip;
+  for (uint32_t i = 0; i < steps; i++) agarce::nextSequence(p);  // the whole 28-bit counter: it never goes backwards
   p.seed = (uint16_t)(1 + esp_random() % 0xFFF5);
   return p;
 }
@@ -91,12 +100,14 @@ agarce::Packet nextPacket() {
 using radio::putBytesOnAir;
 using radio::putOnAir;
 
-// Keep the counters a packet used (once per command, not per re-advertisement: NVS wears).
+// Keep the counters a packet used, sent or taken from another controller (once per command, not per
+// re-advertisement: NVS wears). From then on the counter is current.
 void keepCounters(const agarce::Packet& p) {
   key.tx = p.tx;
   key.restart = p.restart;
   key.rem0 = p.rem0;
   key.rem1 = p.rem1;
+  counterCurrent = true;
   save();
 }
 
@@ -158,12 +169,6 @@ bool ready(const char* what, bool gap = true) {
     Serial.printf("ERR %s: no key (NEWKEY, or LEARN from the app)\n", what);
     return false;
   }
-  if (!key.own && !heardKeySinceBoot) {
-    // A learned key shares its counters with the app, which may have moved on while the board was off
-    Serial.printf("ERR %s: learned key, and the app's counter is unknown since boot: press any button in the app\n",
-                  what);
-    return false;
-  }
   if (gap && sentOnce && millis() - lastSendMs < kMinGapMs) {
     Serial.printf("ERR %s: too soon after the last send\n", what);
     return false;
@@ -218,7 +223,7 @@ void onAdv(const uint8_t* adv, size_t len, uint32_t ms, int rssi) {
       Serial.printf("LEARNED id=%s index=%u: already this board's key, nothing changed\n", idText, p.index);
     } else {
       key = Key{true, false, p.id, p.index, p.prefix, p.rem0, p.rem1, p.tx, p.restart};
-      heardKeySinceBoot = true;
+      counterCurrent = true;  // just taken from a command on the air
       save();
       observeAndSave(p);
       Serial.printf("LEARNED id=%s index=%u (stored in NVS)\n", idText, p.index);
@@ -226,7 +231,6 @@ void onAdv(const uint8_t* adv, size_t len, uint32_t ms, int rssi) {
     }
   }
   if (repeat || !ours) return;
-  heardKeySinceBoot = true;
   // A command with our key is either ours coming back (the receiver's relay: one of our recent sends, same sequence
   // number and seed) or another controller's: a second board sharing the key, or the app.
   if (sent.contains(p)) return;
@@ -339,7 +343,7 @@ void setField(const char* args) {
 
 void learn() {
   learning = true;
-  Serial.println("OK learning: press any button in the Smart Light app");
+  Serial.println("OK learning: send any command from the other controller (another board, or the Smart Light app)");
 }
 
 void forget() {

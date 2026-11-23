@@ -92,6 +92,8 @@ Tests run on the PC: `pio test -e native` from the repo root. They need a C++17 
 - No timer or night light yet (the protocol has them; they're untested).
 - There's no unpair, on purpose.
 - Only one board has been paired with one fan-light. A second board should pair the same way, but that's untested.
+  Instead, a second board can share the first one's ID: `LEARN` on it, then send any command from the first
+  (**verified**). The two then follow each other (`docs/protocol.md`).
 
 ## Credits and licence
 MIT; see [`LICENSE`](LICENSE). The codec is a C++ port of [ha-ble-adv](https://github.com/NicoIIT/ha-ble-adv)'s

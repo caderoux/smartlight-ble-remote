@@ -34,8 +34,10 @@ and the key `AA BB CC DD 5A A5 A5 5A`. The outer checksum (byte 17) is sent in t
 `src/agarce.cpp`.
 
 **The sequence:** ha-ble-adv's "tx, restart, `00 10`" is one 28-bit little-endian counter, plus the app's "order"
-number in the top nibble of the last byte (`0x10` = order 1, `0x50` = order 5). It must keep increasing. When tx wraps
-from 255 to 0, "restart" (its next byte) goes up by one, and the receiver keeps obeying (**verified**).
+number in the top nibble of the last byte (`0x10` = order 1, `0x50` = order 5). The app keeps it increasing, but **the
+receiver obeys any number** (**verified**: a light off with a number older than one already used, and a light on 257
+ahead, were both obeyed). When tx wraps from 255 to 0, "restart" (its next byte) goes up by one, and the receiver
+keeps obeying (**verified**).
 `agarce::nextSequence` carries through all 28 bits and keeps the order nibble, and the example stores the counter in
 NVS, so it never goes backwards, even across a reboot.
 
@@ -51,7 +53,10 @@ both are obeyed. They share one counter too, so each must follow the other's com
   - **older** → ignored: a late copy, a relay of a command the board missed, or a stale controller. The state never
     rolls back. The cost: the phone app, which reuses numbers it doesn't know the board used, isn't followed once
     the board has sent with the ID.
-- Whether the receiver rejects an old number is untested.
+- **After a restart** the saved counter may be behind, if the other controller sent while the board was off; its
+  sends would then be ignored by the other board as old (the fan obeys them anyway). So until the counter is known to
+  be current (a send, a newer number taken, or LEARN), the example's next send skips 1024 ahead, and the other board
+  follows it.
 
 ## Commands (5 bytes)
 **Single device** (type 8): `[attr | device & 15, p0, p1, p2, group & 15 | (device << 2) & 0xC0]`. The device ID is
