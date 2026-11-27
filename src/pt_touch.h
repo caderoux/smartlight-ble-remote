@@ -42,6 +42,8 @@ class Calibration {
  public:
   bool swap = false;
   float ax = 1, bx = 0, ay = 1, by = 0;
+  // The screen toScreen() clamps to. fit() sets it; toString() doesn't save it, so after parse() set it to the
+  // board's screen, or a larger screen's taps are clamped to 320x240.
   int width = 320, height = 240;
 
   // false when the taps don't spread across the screen
