@@ -5,23 +5,6 @@
 namespace remote {
 namespace {
 
-// The geometry, 4 px margins.
-// Main: a header (title + status, y 4-22), the LIGHT and FAN buttons side by side, then Settings across the bottom.
-constexpr Rect kLightToggle{4, 26, 153, 166};
-constexpr Rect kFanToggle{163, 26, 153, 166};
-constexpr Rect kOpenSettings{4, 196, 312, 40};
-
-// Settings: Back (with the status beside it), the LIGHT panel (brightness, colour), the FAN panel (speeds, direction)
-constexpr Rect kBack{4, 4, 76, 34};
-constexpr Rect kLightPanel{4, 42, 312, 98};
-constexpr Rect kFanPanel{4, 144, 312, 92};
-constexpr Rect kBrightDown{140, 60, 52, 36};
-constexpr Rect kBrightUp{256, 60, 52, 36};
-constexpr Rect kColourDown{140, 100, 52, 36};
-constexpr Rect kColourUp{256, 100, 52, 36};
-constexpr int kSpeedX = 12, kSpeedW = 46, kSpeedGap = 4, kSpeedY = 162, kSpeedH = 36;
-constexpr Rect kDirection{12, 202, 296, 32};
-
 int clamp(int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); }
 
 // One step from `v` in direction `dir` (+1/-1), landing on the 10% grid (a value of 37 steps to 40 or 30)
@@ -79,35 +62,37 @@ Screen screenOf(Control c) {
   }
 }
 
-Rect lightPanel() { return kLightPanel; }
-Rect fanPanel() { return kFanPanel; }
+Rect lightPanel(const Layout& l) { return l.lightPanel; }
+Rect fanPanel(const Layout& l) { return l.fanPanel; }
 
-Rect rect(Control c) {
+Rect rect(Control c, const Layout& l) {
   switch (c) {
-    case Control::LightToggle: return kLightToggle;
-    case Control::FanToggle: return kFanToggle;
-    case Control::OpenSettings: return kOpenSettings;
-    case Control::Back: return kBack;
-    case Control::BrightDown: return kBrightDown;
-    case Control::BrightUp: return kBrightUp;
-    case Control::ColourDown: return kColourDown;
-    case Control::ColourUp: return kColourUp;
-    case Control::Direction: return kDirection;
+    case Control::LightToggle: return l.lightToggle;
+    case Control::FanToggle: return l.fanToggle;
+    case Control::OpenSettings: return l.openSettings;
+    case Control::Back: return l.back;
+    case Control::BrightDown: return l.brightDown;
+    case Control::BrightUp: return l.brightUp;
+    case Control::ColourDown: return l.colourDown;
+    case Control::ColourUp: return l.colourUp;
+    case Control::Direction: return l.direction;
     case Control::None: return Rect{0, 0, 0, 0};
     default: {
-      int i = speedOf(c) - 1;
-      return Rect{(int16_t)(kSpeedX + i * (kSpeedW + kSpeedGap)), kSpeedY, kSpeedW, kSpeedH};
+      int cols = l.speedColumns > 0 ? l.speedColumns : 6;  // a Layout that left it unset: one row
+      int i = speedOf(c) - 1, col = i % cols, row = i / cols;
+      return Rect{(int16_t)(l.speedX + col * (l.speedW + l.speedGap)), (int16_t)(l.speedY + row * (l.speedH + l.speedGap)),
+                  l.speedW, l.speedH};
     }
   }
 }
 
-Control hit(Screen screen, int x, int y) {
+Control hit(Screen screen, int x, int y, const Layout& l) {
   Control best = Control::None;
   int bestDistance = kSlop + 1;
   for (int i = 1; i < kControlCount; i++) {
     Control c = (Control)i;
     if (screenOf(c) != screen) continue;
-    int d = distance(rect(c), x, y);
+    int d = distance(rect(c, l), x, y);
     if (d < bestDistance) {  // a tap inside a button (0) always beats a near miss of another
       best = c;
       bestDistance = d;

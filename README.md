@@ -72,7 +72,7 @@ the board, sending the commands as it goes. `tools/board.py` is the small serial
 In your own PlatformIO project:
 
 ```ini
-lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.1.2
+lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v0.2.0
 ```
 
 - `agarce.h`: decode and encode advertisements (`decodeAdv`, `encodeAdv`, `Packet`); the sequence number
@@ -83,7 +83,9 @@ lib_deps = SmartLightBLE=https://github.com/caderoux/smartlight-ble-remote.git#v
   (`RecentCommands`), and decide what each changes (`decide`).
 - `describe.h`: a packet in words, for logs.
 - `remote.h`, `pt_touch.h`: the touchscreen remote's layout model (and `change`: the words for a command another
-  controller sent), and the touch maths.
+  controller sent), and the touch maths. `remote_layout.h` holds the geometry: `kLayout320x240` (the 2.8" CYD, the
+  default) and `kLayout480x320` (a 4" landscape panel, with room for a column of tabs on the left); pass one to
+  `rect`, `hit`, `lightPanel` and `fanPanel`, or declare your own `Layout`.
 
 Tests run on the PC: `pio test -e native` from the repo root. They need a C++17 compiler on the PATH.
 

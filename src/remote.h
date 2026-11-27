@@ -1,5 +1,6 @@
 // The touchscreen remote's model: where each control is on each screen, which control a tap hits, and what a tap
-// does. Pure logic, tested on the PC; the firmware's ui.cpp draws it from the same layout. 320x240 landscape.
+// does. Pure logic, tested on the PC; the firmware's ui.cpp draws it from the same layout. The geometry is a Layout
+// (remote_layout.h): 320x240 landscape by default, or the 4" 480x320 one.
 //   Main: LIGHT on/off and FAN on/off (each turns on with the last settings), and Settings.
 //   Settings: Back; brightness and colour -/+; fan speeds 1-6 and direction. A setting changed while its device is
 //   off is only saved, for the next "on" from the main screen; while it's on, it's sent.
@@ -8,6 +9,7 @@
 
 #include "fancmd.h"
 #include "fanstate.h"
+#include "remote_layout.h"
 
 namespace remote {
 
@@ -35,12 +37,8 @@ enum class Control : uint8_t {
 };
 constexpr int kControlCount = 16;  // including None
 
-struct Rect {
-  int16_t x, y, w, h;
-  bool contains(int px, int py) const { return px >= x && px < x + w && py >= y && py < y + h; }
-};
-
-constexpr int kWidth = 320, kHeight = 240;
+// The default layout's size (kLayout320x240), as before layouts could be chosen
+constexpr int kWidth = kLayout320x240.width, kHeight = kLayout320x240.height;
 constexpr int kStep = 10;  // brightness and colour move in steps of 10%
 constexpr int kBrightMin = 10, kBrightMax = 100, kColourMin = 0, kColourMax = 100;
 // A tap this many pixels outside a button still counts as that button (on a resistive panel, about 1 tap in 8
@@ -49,14 +47,14 @@ constexpr int kSlop = 4;
 constexpr uint32_t kSettingsTimeoutMs = 30000;  // Settings goes back to Main after this long with no tap
 
 Screen screenOf(Control c);  // which screen a control is on (Main for None)
-// The control's drawn rect (an empty rect for None).
-Rect rect(Control c);
+// The control's drawn rect in `layout` (an empty rect for None).
+Rect rect(Control c, const Layout& layout = kLayout320x240);
 // The settings screen's panels (for drawing): the light's and the fan's.
-Rect lightPanel();
-Rect fanPanel();
+Rect lightPanel(const Layout& layout = kLayout320x240);
+Rect fanPanel(const Layout& layout = kLayout320x240);
 
 // The control under a tap on `screen`: the one drawn there, else the nearest within kSlop of the tap, else None.
-Control hit(Screen screen, int x, int y);
+Control hit(Screen screen, int x, int y, const Layout& layout = kLayout320x240);
 
 // What a tap does.
 struct Tap {
